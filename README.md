@@ -1,7 +1,9 @@
 # Sharp for AWS Lambda (with HEIC support)
 AWS Lambda Layer providing [sharp](https://github.com/lovell/sharp) with HEIC (and WebP) support
 
-![Build Status](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiUnY2cHpCUEwybDl5b2lIUys2b1lhN1BxMFVvb1pxMU8rUUpNNG1hSEFFN2VCUmxkK2t6azZrMEVOY1Y2RW40TGZ3NlF1bUo1dUE0ZVhiRm5GN3Q2YlJBPSIsIml2UGFyYW1ldGVyU3BlYyI6IjVxNm9zL3pWa0dQa21lNXAiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=main)
+![CodeBuild Build Status](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiUnY2cHpCUEwybDl5b2lIUys2b1lhN1BxMFVvb1pxMU8rUUpNNG1hSEFFN2VCUmxkK2t6azZrMEVOY1Y2RW40TGZ3NlF1bUo1dUE0ZVhiRm5GN3Q2YlJBPSIsIml2UGFyYW1ldGVyU3BlYyI6IjVxNm9zL3pWa0dQa21lNXAiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=main)
+
+![GitHub Actions Build Status](https://github.com/zoellner/sharp-heic-lambda-layer/actions/workflows/ci.yml/badge.svg)
 
 ## Prerequisites
 
@@ -15,7 +17,7 @@ Due to potential license concerns for the HEVC patent group, this repo can't be 
 
 But you can compile and deploy this lambda layer yourself at your own risk and use it wihin your own accounts. All you need is an S3 bucket to deploy the compiled code to (replace `your-s3-bucket` in the code snippet below). Please see the note below regarding the build process.
 
-It is recommended to automate this process using AWS CodeBuild. A buildspec file is provided in the repo. In that case you'll have to set the `SAM_BUCKET` environment variable in CodeBuild. For other environment variables see the table below. Use an Amazon Linux 2023 standard image such as `aws/codebuild/amazonlinux-x86_64-standard:6.0`.
+It is recommended to automate this process using AWS CodeBuild or GitHub Actions. [buildspec.yml](buildspec.yml) provides the CodeBuild example and [.github/workflows/ci.yml](.github/workflows/ci.yml) provides the GitHub Actions example. In that case you'll have to set the `SAM_BUCKET` environment variable in CodeBuild. For other environment variables see the table below. Use an Amazon Linux 2023 standard image such as `aws/codebuild/amazonlinux-x86_64-standard:6.0`.
 
 A sample CloudFormation template is provided to setup the CodeBuild project, [sample-buildproject.yaml](sample-buildproject.yaml).
 
