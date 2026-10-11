@@ -1,71 +1,85 @@
 name: CI Build
 
 on:
-  # To enable build on push to main or pr to main, uncomment below
-  # push:
-  #   branches: [ main ]
-  # pull_request:
-  #   branches: [ main ]
+  # Automatically validate pull requests in forks; upstream builds remain manual.
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the layer to the configured AWS account
+        type: boolean
+        default: false
 
-  # Allow invocation of this workflow through the GitHub.com UI
-  workflow_dispatch: {}
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  PR_NUMBER: ${{ github.event.pull_request.number }}
-  NODE_ENV: production
-  DISABLE_OPENCOLLECTIVE: true
   SAM_CLI_TELEMETRY: 0
-  AWS_REGION: us-east-2
-  SAM_BUCKET: ''
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  SAM_BUCKET: ${{ vars.SAM_BUCKET }}
+  LAMBDA_IMAGE: public.ecr.aws/lambda/nodejs:24
 
 jobs:
   build:
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.fork == true
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
 
-      - name: Use Node.js 14
-        uses: actions/setup-node@v2
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
         with:
-          node-version: 14
-          cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
+          node-version: 24
 
-      - name: Use Python 3.8
-        uses: actions/setup-python@v2
+      - name: Install AWS SAM CLI
+        uses: aws-actions/setup-sam@v3
         with:
-          python-version: 3.x
+          use-installer: true
 
-      - name: Install awscli
+      - name: Check JavaScript syntax
+        run: npm test
+
+      - name: Read pinned versions
         run: |
-          pip3 install aws-sam-cli --upgrade --user
+          echo "EXPECTED_SHARP_VERSION=$(sed -n 's/^SHARP_VERSION=//p' layer/Makefile)" >> "$GITHUB_ENV"
+          echo "EXPECTED_VIPS_VERSION=$(sed -n 's/^VIPS_VERSION=//p' layer/Makefile)" >> "$GITHUB_ENV"
 
-      - name: Install Node Modules
-        run: npm ci
-        env:
-          NODE_ENV: development
+      # Ubuntu hosts Docker. The Makefile's dnf commands run in Amazon Linux 2023,
+      # matching the Node.js 24 Lambda runtime rather than the host distribution.
+      - name: Build layer in the Lambda build image
+        run: |
+          sam build --use-container \
+            --build-image public.ecr.aws/sam/build-nodejs24.x \
+            --container-env-var BUILD_JOBS=4 \
+            --container-env-var LIBAOM_BUILD_JOBS=2
 
-      - name: Audit Node Modules
-        run: npm audit --audit-level=moderate
+      - name: Test layer in the Lambda runtime image
+        run: |
+          docker run --rm \
+            --entrypoint /var/lang/bin/node \
+            -v "$PWD/.aws-sam/build/SharpHEICLayer:/opt:ro" \
+            -v "$PWD:/work:ro" \
+            -e NODE_PATH=/opt/nodejs/node_modules \
+            -e LD_LIBRARY_PATH=/var/lang/lib:/lib64:/usr/lib64:/var/runtime:/var/runtime/lib:/var/task:/var/task/lib:/opt/lib \
+            -e EXPECTED_SHARP_VERSION -e EXPECTED_VIPS_VERSION \
+            "$LAMBDA_IMAGE" --test /work/test/layer.test.js
 
-      - name: Install Node Modules
-        run: npm run lint
-
-      - name: Build
-        run: npm run build
-
-      # To deploy to AWS:
-      # Set SAM_BUCKET to your S3 Bucket for SAM artifacts
-      # Set org-level or repo-level secrets:
-      #   AWS_ACCESS_KEY_ID
-      #   AWS_SECRET_ACCESS_KEY
-      # Attaching the following policies to the user / role used by this
-      #   workflow would be sufficient, but also overly broad:
-      #   - AWSLambda_FullAccess
-      #   - AmazonS3FullAccess
-      - if: ${{ env.SAM_BUCKET != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        name: Deploy
-        run: npm run deploy
+      # Build artifacts stay on the runner. Publishing requires an explicit manual
+      # request, a SAM_BUCKET repository variable, and these repository secrets.
+      - name: Deploy
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy
+        run: |
+          if [ -z "$SAM_BUCKET" ]; then
+            echo "Set the SAM_BUCKET repository variable before deploying." >&2
+            exit 1
+          fi
+          npm run deploy
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
