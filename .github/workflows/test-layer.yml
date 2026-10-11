@@ -22,10 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: pwrdrvr/configure-nodejs@v1.6.0
         with:
-          node-version: 24
+          node-version: 24.x
       - run: npm test
 
   # Decides whether the layer needs to be rebuilt. The workflow itself always runs because its jobs
@@ -36,7 +36,7 @@ jobs:
     outputs:
       layer: ${{ steps.filter.outputs.layer }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
       - id: filter
@@ -62,7 +62,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+
+      - uses: pwrdrvr/configure-nodejs@v1.6.0
+        with:
+          node-version: 24.x
 
       - uses: aws-actions/setup-sam@v3
         with:

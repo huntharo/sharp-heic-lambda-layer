@@ -1,0 +1,85 @@
+name: CI Build
+
+on:
+  # Automatically validate pull requests in forks; upstream builds remain manual.
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy the layer to the configured AWS account
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  SAM_CLI_TELEMETRY: 0
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  SAM_BUCKET: ${{ vars.SAM_BUCKET }}
+  LAMBDA_IMAGE: public.ecr.aws/lambda/nodejs:24
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.fork == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Use Node.js 24
+        uses: pwrdrvr/configure-nodejs@v1.6.0
+        with:
+          node-version: 24.x
+
+      - name: Install AWS SAM CLI
+        uses: aws-actions/setup-sam@v3
+        with:
+          use-installer: true
+
+      - name: Check JavaScript syntax
+        run: npm test
+
+      - name: Read pinned versions
+        run: |
+          echo "EXPECTED_SHARP_VERSION=$(sed -n 's/^SHARP_VERSION=//p' layer/Makefile)" >> "$GITHUB_ENV"
+          echo "EXPECTED_VIPS_VERSION=$(sed -n 's/^VIPS_VERSION=//p' layer/Makefile)" >> "$GITHUB_ENV"
+
+      # Ubuntu hosts Docker. The Makefile's dnf commands run in Amazon Linux 2023,
+      # matching the Node.js 24 Lambda runtime rather than the host distribution.
+      - name: Build layer in the Lambda build image
+        run: |
+          sam build --use-container \
+            --build-image public.ecr.aws/sam/build-nodejs24.x \
+            --container-env-var BUILD_JOBS=4 \
+            --container-env-var LIBAOM_BUILD_JOBS=2
+
+      - name: Test layer in the Lambda runtime image
+        run: |
+          docker run --rm \
+            --entrypoint /var/lang/bin/node \
+            -v "$PWD/.aws-sam/build/SharpHEICLayer:/opt:ro" \
+            -v "$PWD:/work:ro" \
+            -e NODE_PATH=/opt/nodejs/node_modules \
+            -e LD_LIBRARY_PATH=/var/lang/lib:/lib64:/usr/lib64:/var/runtime:/var/runtime/lib:/var/task:/var/task/lib:/opt/lib \
+            -e EXPECTED_SHARP_VERSION -e EXPECTED_VIPS_VERSION \
+            "$LAMBDA_IMAGE" --test /work/test/layer.test.js
+
+      # Build artifacts stay on the runner. Publishing requires an explicit manual
+      # request, a SAM_BUCKET repository variable, and these repository secrets.
+      - name: Deploy
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy
+        run: |
+          if [ -z "$SAM_BUCKET" ]; then
+            echo "Set the SAM_BUCKET repository variable before deploying." >&2
+            exit 1
+          fi
+          npm run deploy
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

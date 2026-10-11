@@ -1,7 +1,9 @@
 # Sharp for AWS Lambda (with HEIC support)
 AWS Lambda Layer providing [sharp](https://github.com/lovell/sharp) with HEIC (and WebP) support
 
-![Build Status](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiUnY2cHpCUEwybDl5b2lIUys2b1lhN1BxMFVvb1pxMU8rUUpNNG1hSEFFN2VCUmxkK2t6azZrMEVOY1Y2RW40TGZ3NlF1bUo1dUE0ZVhiRm5GN3Q2YlJBPSIsIml2UGFyYW1ldGVyU3BlYyI6IjVxNm9zL3pWa0dQa21lNXAiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=main)
+![CodeBuild Build Status](https://codebuild.us-east-1.amazonaws.com/badges?uuid=eyJlbmNyeXB0ZWREYXRhIjoiUnY2cHpCUEwybDl5b2lIUys2b1lhN1BxMFVvb1pxMU8rUUpNNG1hSEFFN2VCUmxkK2t6azZrMEVOY1Y2RW40TGZ3NlF1bUo1dUE0ZVhiRm5GN3Q2YlJBPSIsIml2UGFyYW1ldGVyU3BlYyI6IjVxNm9zL3pWa0dQa21lNXAiLCJtYXRlcmlhbFNldFNlcmlhbCI6MX0%3D&branch=main)
+
+![GitHub Actions Build Status](https://github.com/zoellner/sharp-heic-lambda-layer/actions/workflows/ci.yml/badge.svg)
 
 ## Prerequisites
 
@@ -15,7 +17,7 @@ Due to potential license concerns for the HEVC patent group, this repo can't be 
 
 But you can compile and deploy this lambda layer yourself at your own risk and use it wihin your own accounts. All you need is an S3 bucket to deploy the compiled code to (replace `your-s3-bucket` in the code snippet below). Please see the note below regarding the build process.
 
-It is recommended to automate this process using AWS CodeBuild. A buildspec file is provided in the repo. In that case you'll have to set the `SAM_BUCKET` environment variable in CodeBuild. For other environment variables see the table below. Use an Amazon Linux 2023 standard image such as `aws/codebuild/amazonlinux-x86_64-standard:6.0`.
+It is recommended to automate this process using AWS CodeBuild or GitHub Actions. [buildspec.yml](buildspec.yml) provides the CodeBuild example and [.github/workflows/ci.yml](.github/workflows/ci.yml) provides the GitHub Actions example. In that case you'll have to set the `SAM_BUCKET` environment variable in CodeBuild. For other environment variables see the table below. Use an Amazon Linux 2023 standard image such as `aws/codebuild/amazonlinux-x86_64-standard:6.0`.
 
 A sample CloudFormation template is provided to setup the CodeBuild project, [sample-buildproject.yaml](sample-buildproject.yaml).
 
@@ -58,6 +60,13 @@ The environment variables are used to create a `samconfig.toml` file that config
 
 ### Note regarding build process
 Previously, some custom docker images were needed to build this layer. AWS now publishes managed SAM build images for current Lambda runtimes, including `public.ecr.aws/sam/build-nodejs24.x`.
+
+### GitHub Actions
+The [CI Build](.github/workflows/ci.yml) example runs on an Ubuntu runner and builds inside the Amazon Linux 2023 SAM image for Node.js 24. The Makefile's `dnf` commands run in that container, so they do not need to be replaced with Ubuntu `apt-get` commands. The workflow then runs the layer tests in the Node.js 24 Lambda runtime image.
+
+Fork the repository and enable GitHub Actions in the fork. Pull requests targeting `main` in the fork automatically run this workflow, including pull requests from another branch in the same fork. In the upstream repository, this example only builds when manually invoked. Once the workflow is on the default branch, select **CI Build** in the Actions tab and choose **Run workflow** to start a manual build. Builds require no AWS credentials, and the compiled layer is not uploaded as an artifact or cached.
+
+To deploy into your own AWS account, set the `SAM_BUCKET` repository variable to your S3 bucket and add the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` repository secrets. Optionally set the `AWS_REGION` repository variable; it defaults to `us-east-1`. Then manually run **CI Build** with **Deploy the layer to the configured AWS account** enabled. The IAM user must have permission to package the artifacts in S3 and deploy the CloudFormation stack and Lambda layer. Deployment is disabled by default and never runs for pull requests.
 
 ### Testing
 The [Test layer](.github/workflows/test-layer.yml) workflow builds the layer with `sam build --use-container` and mounts the result at `/opt` in the `public.ecr.aws/lambda/nodejs:24` runtime image. There it runs [test/layer.test.js](test/layer.test.js), which checks shared library resolution, the libvips and sharp versions, HEIC decoding, WebP resizing, HEIF encoding with both HEVC and AV1, static and animated GIF output, and palette PNG output. Pixel colours are verified against [test/fixtures/quadrants.heic](test/fixtures/quadrants.heic), a synthetic image encoded with macOS `sips` (regenerate with `node test/fixtures/make-quadrants-heic.js`). The layer is only rebuilt when `layer/`, `test/`, `examples/src/`, `template.yaml` or the workflow itself change; for other changes (e.g. documentation) the build job is skipped. It also invokes the [example function](examples/src/index.js) through the Lambda Runtime Interface Emulator.
