@@ -30,12 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v7
+        uses: pwrdrvr/configure-nodejs@v1.6.0
         with:
-          node-version: 24
+          node-version: 24.x
 
       - name: Install AWS SAM CLI
         uses: aws-actions/setup-sam@v3
